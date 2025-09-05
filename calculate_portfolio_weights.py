@@ -112,7 +112,7 @@ def print_report(results, portfolio_df):
 
 def main(file_path):
     portfolio = read_input(file_path)
-
+    region_to_country = read_input("regions.yaml")
     response = requests.get(IMID_url)
     html_content = response.text
     soup = BeautifulSoup(html_content, "html.parser")
