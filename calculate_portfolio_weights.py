@@ -1,48 +1,98 @@
 """
-The goal of this script is to determine the appropriate weights for the 
-following 8 non overlapping sectors to create a portfolio that ultimately 
-tracks the global equity investment market, as reflected by the 
-MSCI All Country World Index Investable Market Index (ACWI IMI):
-1. United States - Large/Mid cap
-2. Developed Europe - Large/Mid cap
-3. Emerging markets - All cap
-4. Developed World - Small cap
-5. Japan - Large/Mid cap
-6. Developed Pacific ex Japan - Large/Mid cap
-7. Canada - Large/Mid cap
-8. Israel - Large/Mid cap
+Portfolio Diversity Calculator
 
-It extracts individual country weights in the MSCI ACWI IMI index from the 
-web page of the IMID ETF that tracks this index. then it calculates the 
-appropriate weights for the above 8 sectors after appropriate grouping.
+Calculate optimal weights for geographic sectors/ETFs to track global equity markets
+when direct investment in a world index ETF isn't feasible.
 
-Q: Why not just buy IMID and that's it?
-A: Sometimes it's not feasible to have one's whole assets invested into 
-    a single ETF. for example, In Israel, the only passive index option 
-    currently available in pension funds is S&P 500. But one may still want
-    their entire equity assets (pension, private brokerage etc'.) to collectively
-    track a diversified world index. 
-    Another reasons may include flexibility and reduction of overall expense ratio. 
+This tool determines appropriate weights for user-defined portfolio sectors to create
+a combined portfolio that tracks the MSCI All Country World Index Investable Market 
+Index (ACWI IMI) - the most comprehensive global equity benchmark.
 
-Q: Why specifically these 8 sectors?
-A: I chose them manually for a number of reasons:
-    - There is no "World ex US" ETF that is accumulating and domiciled outside of US
-        (thus, doesn't expose non US citizens to draconian inheritance tax) as far as I know.
-    - They have no overlaps and fully cover the global equity investment market.
-    - They reflect choices based on existing ETFs that are large, cheap and 
-        track complementary MSCI based indexes (and not mix with FTSE, to avoid overlaps).
+COMMON USE CASES:
+1. Pension Fund Constraint: Your pension fund only offers S&P 500, but you want global 
+   diversification across all your investment accounts.
+
+2. Cost Optimization: Combining multiple lower-cost regional ETFs instead of 
+   a single expensive world ETF.
+
+3. Flexibility: Maintaining control over regional allocations while achieving 
+   world market exposure.
+
+PORTFOLIO TYPES SUPPORTED:
+- Perfect Coverage: 100% global market replication with zero overlaps
+- Approximate Coverage: Simplified portfolios covering 85-95% of global markets  
+- Custom Combinations: Any mix of countries, regions, and market caps
+
+EXAMPLE OUTPUT:
+For a "perfect coverage" portfolio, you might get:
+- United States (Large+Medium): 52.3%
+- Developed Europe (Large+Medium): 13.8% 
+- Emerging Markets (All caps): 11.8%
+- Japan (Large+Medium): 5.0%
+- etc.
+
+This tells you exactly how to weight each sector/ETF to achieve global market exposure.
+
+RECOMMENDED STARTING POINT:
+Use portfolios/perfect_with_SNP500.yaml for comprehensive global coverage.
 """
-
-IMID_url = 'https://www.ssga.com/uk/en_gb/institutional/etfs/funds/spdr-msci-acwi-imi-ucits-etf-spyi-gy'
 
 import requests
 from bs4 import BeautifulSoup
 import json
 import pandas as pd
-from constants import *
-from utils import read_input
 import argparse
+from utils import (
+    read_yaml, load_regions, load_config, 
+    validate_portfolio_sectors, get_countries_for_sector
+)
 
+def fetch_country_weights(url, timeout=30):
+    """
+    Fetch country weights from IMID ETF webpage.
+    
+    Args:
+        url (str): URL to fetch data from
+        timeout (int): Request timeout in seconds
+        
+    Returns:
+        pd.DataFrame: DataFrame with Country and Weight columns
+        
+    Raises:
+        Exception: If data fetching or parsing fails
+    """
+    try:
+        print(f"Fetching data from {url}")
+        response = requests.get(url, timeout=timeout)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, "html.parser")
+        json_input = soup.find("input", id="fund-geographical-breakdown")
+        
+        if not json_input:
+            raise ValueError("Could not find 'fund-geographical-breakdown' element on the webpage. "
+                           "The website structure may have changed.")
+        
+        json_data = json.loads(json_input["value"])
+        table_data = json_data.get("attrArray", [])
+        
+        if not table_data:
+            raise ValueError("No country data found in the JSON response")
+        
+        # Build DataFrame
+        df = pd.DataFrame(columns=["Country", "Weight"])
+        df["Country"] = [item['name']['value'] for item in table_data]
+        df["Weight"] = [float(item['weight']['value'][:-1]) for item in table_data]
+        
+        print(f"Successfully fetched data for {len(df)} countries")
+        return df
+        
+    except requests.RequestException as e:
+        raise Exception(f"Failed to fetch data from {url}: {e}")
+    except json.JSONDecodeError as e:
+        raise Exception(f"Failed to parse JSON data: {e}")
+    except Exception as e:
+        raise Exception(f"Error processing country weights: {e}")
 def world_coverage(portfolio, country_weights):
     # check that the portfolio components fully and without overlaps cover 
     # large, medium and small cap stocks of each country within MSCI ACWI IMI.
@@ -111,8 +161,54 @@ def print_report(results, portfolio_df):
         print(f"Total market coverage={portfolio_df['Weight'].sum()}, Total overlapping coverage: {sum(overlapping_pct.values())}")
 
 def main(file_path):
-    portfolio = read_input(file_path)
-    region_to_country = read_input("regions.yaml")
+    """
+    Main execution function.
+    
+    Args:
+        file_path (str): Path to portfolio YAML file
+    """
+    # load configurations
+    region_groupings, all_countries = load_regions()
+    config = load_config()
+    market_cap_pct = config['market_caps']
+    imid_url = config['data_sources']['url']
+
+    # load portfolio definition:
+    portfolio = read_yaml(file_path)
+
+    # validate portfolio sectors
+    valid_sectors, invalid_sectors = validate_portfolio_sectors(portfolio, region_groupings, all_countries)
+    if invalid_sectors:
+        raise Exception(f"Unknown sectors in portfolio: {invalid_sectors}. Make sure they appear in the regions.yaml file as a region or country.")
+    
+    # fetch country weights from IMID
+    df = fetch_country_weights(imid_url)
+
+    # add missing countries with 0 weight
+    missing_countries = set(all_countries) - set(df['Country'])
+    if missing_countries:
+        print(f"Adding {len(missing_countries)} missing countries with 0% weight")
+        for country in missing_countries:
+            df.loc[len(df)] = {'Country': country, 'Weight': 0.00}
+
+    # build region weights by grouping countries
+    region_weights = {}
+    for region_name, countries in region_groupings.items():
+        region_weight = df[df['Country'].isin(countries)]['Weight'].sum()
+        region_weights[region_name] = region_weight
+    
+    region_weights_series = pd.Series(region_weights).sort_values(ascending=False)
+        
+    print("Region Weights:")
+    print(region_weights_series)    
+    
+
+    ###
+
+
+
+
+    region_to_country = read_yaml("regions.yaml")
     response = requests.get(IMID_url)
     html_content = response.text
     soup = BeautifulSoup(html_content, "html.parser")
@@ -167,8 +263,16 @@ def main(file_path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Read portfolio elements from YAML file")
-    parser.add_argument('--file', type=str, help="Path to the YAML input file", default="portfolios/perfect_with_SNP500.yaml")
+    parser = argparse.ArgumentParser(
+        description="Calculate portfolio weights for global equity diversification",
+        epilog="Example: python calculate_portfolio_weights.py --file portfolios/perfect_with_SNP500.yaml"
+    )
+    parser.add_argument(
+        '--file', 
+        type=str, 
+        help="Path to the YAML portfolio definition file", 
+        default="portfolios/perfect_with_SNP500.yaml"
+    )
     args = parser.parse_args()
     main(args.file)
 

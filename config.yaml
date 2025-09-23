@@ -1,0 +1,7 @@
+  market_caps:
+    Large: 70
+    Medium: 15
+    Small: 15
+  
+  data_sources:
+    url: "https://www.ssga.com/uk/en_gb/institutional/etfs/funds/spdr-msci-acwi-imi-ucits-etf-spyi-gy"

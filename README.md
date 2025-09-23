@@ -7,7 +7,6 @@ A tool for calculating optimal portfolio weights to track global equity markets 
 Sometimes you can't simply buy a single world index ETF due to various constraints:
 
 - **Limited Options**: Your pension fund only offers S&P 500, but you want global diversification across all your accounts
-- **Tax Efficiency**: Avoiding US-domiciled ETFs to prevent inheritance tax issues for non-US citizens
 - **Cost Optimization**: Combining multiple ETFs for lower overall expense ratios
 - **Flexibility**: Want control over regional allocations while maintaining world market exposure (for example, if specific region ETFs are traded in your local stock exchange and you can buy them at low comission and/or favorable taxation policy)
 
@@ -131,15 +130,7 @@ All World:
 
 **Result**: Combined portfolio tracks global equity markets perfectly.
 
-### Example 2: Non-US Investor Tax Optimization
-**Problem**: Want global exposure but avoid US inheritance tax on US-domiciled ETFs.
-
-**Solution**:
-1. Use Ireland-domiciled ETFs for each calculated sector
-2. Weight according to tool output
-3. Achieve same global exposure as ACWI IMI without tax issues
-
-### Example 3: Cost Optimization
+### Example 2: Cost Optimization
 **Problem**: IMID ETF has 0.17% expense ratio, but can you do better?
 
 **Solution**:

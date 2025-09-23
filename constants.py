@@ -1,6 +1,31 @@
 
-MARKET_TO_COUNTRY  = {"Developed": ["Australia", "Austria", "Belgium", "Canada", "Denmark", "Finland", "France", "Germany", "Hong Kong", "Ireland", "Israel", "Italy", "Japan", "Netherlands", "New Zealand", "Norway", "Portugal", "Singapore", "Spain", "Sweden", "Switzerland", "United Kingdom", "United States"],
-                      "Emerging": ["Brazil", "Chile", "China", "Colombia", "Czech Republic", "Egypt", "Greece", "Hungary", "India", "Indonesia", "South Korea", "Kuwait", "Malaysia", "Mexico", "Peru", "Philippines", "Poland", "Qatar", "Saudi Arabia", "South Africa", "Taiwan", "Thailand", "Turkey", "UAE"]}
+def load_config(config_file="regions.yaml"):
+    """
+    Load all configuration from regions YAML file.
+    
+    Returns:
+        tuple: (region_groupings, market_cap_pct, primary_url, all_countries)
+    """
+    from utils import read_input
+    
+    data = read_input(config_file)
+    
+    # Extract config section
+    config = data.pop('config', {})
+    market_cap_pct = config.get('market_caps', {'Large': 70, 'Medium': 15, 'Small': 15})
+    primary_url = config.get('data_sources', {}).get('primary_url', '')
+    
+    # All remaining items are region groupings
+    region_groupings = data
+    
+    # Get all unique countries
+    all_countries = set()
+    for countries in region_groupings.values():
+        all_countries.update(countries)
+    all_countries = sorted(list(all_countries))
+    
+    return region_groupings, market_cap_pct, primary_url, all_countries
+
 
 COUNTRIES = MARKET_TO_COUNTRY["Developed"] + MARKET_TO_COUNTRY["Emerging"]
 
