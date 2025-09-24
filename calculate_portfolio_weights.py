@@ -93,56 +93,125 @@ def fetch_country_weights(url, timeout=30):
         raise Exception(f"Failed to parse JSON data: {e}")
     except Exception as e:
         raise Exception(f"Error processing country weights: {e}")
-def world_coverage(portfolio, country_weights):
-    # check that the portfolio components fully and without overlaps cover 
-    # large, medium and small cap stocks of each country within MSCI ACWI IMI.
+    
+
+def calculate_portfolio_weights(portfolio, all_countries, region_weights_series, country_weights_df, market_cap_pct):
+    """
+    Calculate weights for each sector in the portfolio.
+    
+    Args:
+        portfolio (dict): Portfolio definition
+        all_countries (list): All available countries
+        region_weights_series (pd.Series): Regional weights
+        country_weights_df (pd.DataFrame): Country weights DataFrame
+        market_cap_pct (dict): Market cap percentages
+        
+    Returns:
+        pd.DataFrame: Portfolio weights DataFrame
+    """
+    portfolio_df = pd.DataFrame(columns=["Sector", "Market Caps", "Weight"])
+    sector_weights = []
+    
+    for sector, caps in portfolio.items():
+        cap_pct = sum([market_cap_pct[cap] for cap in caps])
+        sector_weight = 0.0  # Initialize to prevent UnboundLocalError
+        
+        if sector == "All World":
+            # Special case: use total world weight (should be 100%)
+            sector_weight = 100.0 * (cap_pct / 100.0)
+        elif sector in region_weights_series.index:
+            sector_weight = region_weights_series[sector] * (cap_pct / 100.0)
+        elif sector in all_countries:
+            # Individual country
+            country_weight = country_weights_df[country_weights_df['Country'] == sector]['Weight'].sum()
+            sector_weight = country_weight * (cap_pct / 100.0)
+        else:
+            raise Exception(f"Warning: Sector '{sector}' not found in regions or countries.")
+        
+        sector_weights.append(sector_weight)
+    
+    portfolio_df['Sector'] = list(portfolio.keys())
+    portfolio_df['Market Caps'] = list(portfolio.values())
+    portfolio_df['Weight'] = sector_weights
+    
+    return portfolio_df
+
+def analyze_world_coverage(portfolio, country_weights, region_groupings, all_countries, market_cap_pct):
+    """
+    Check portfolio coverage against world markets.
+    
+    Args:
+        portfolio (dict): Portfolio definition
+        country_weights (dict): Country weight mappings
+        region_groupings (dict): Region to countries mapping
+        all_countries (list): All available countries
+        market_cap_pct (dict): Market cap percentages
+        
+    Returns:
+        dict: Coverage analysis results
+    """
     cap_coverage = {}
     pct_coverage = {}
-    for sector in portfolio:
-        if sector in REGION_TO_COUNTRY:
-            countries = REGION_TO_COUNTRY[sector]
-        elif sector in MARKET_TO_COUNTRY:
-            countries = MARKET_TO_COUNTRY[sector]
-        elif sector in COUNTRIES:
-            countries = [sector]
-        for country in countries:
-            if country not in cap_coverage:
-                cap_coverage[country] = sorted(portfolio[sector])
-                pct_coverage[country] = sum([(country_weights[country]/100.0)*MARKET_CAP_PCT[cap] for cap in portfolio[sector]])
-            else:
-                cap_coverage[country] = sorted(cap_coverage[country] + portfolio[sector])
-                pct_coverage[country] += sum([(country_weights[country]/100.0)*MARKET_CAP_PCT[cap] for cap in portfolio[sector]])
     
-    # check overlap and coverage:
+    for sector, caps in portfolio.items():
+        countries = get_countries_for_sector(sector, region_groupings, all_countries)
+        
+        if not countries:
+            raise Exception(f"Unknown sector '{sector}' - skipping")
+            
+        for country in countries:
+            if country not in country_weights:
+                raise Exception(f"Country '{country}' not found in weights data")
+                
+            if country not in cap_coverage:
+                cap_coverage[country] = sorted(caps)
+                pct_coverage[country] = sum([
+                    (country_weights[country]/100.0) * market_cap_pct[cap] 
+                    for cap in caps
+                ])
+            else:
+                cap_coverage[country] = sorted(cap_coverage[country] + caps)
+                pct_coverage[country] += sum([
+                    (country_weights[country]/100.0) * market_cap_pct[cap] 
+                    for cap in caps
+                ])
+    
+    # Check for overlaps and missing coverage
     overlapping_caps = {}
     missing_caps = {}
     overlapping_pct = {}
     missing_pct = {}
-
-    all_caps = list(MARKET_CAP_PCT.keys())
-    for country,weight in country_weights.items():
+    
+    all_caps = list(market_cap_pct.keys())
+    for country, weight in country_weights.items():
         if country not in cap_coverage:
             cap_coverage[country] = []
+            
         missing_caps_cur = [element for element in all_caps if element not in cap_coverage[country]]
         if missing_caps_cur:
             missing_caps[country] = missing_caps_cur
-            missing_pct[country] = sum([(country_weights[country]/100.0)*MARKET_CAP_PCT[cap] for cap in missing_caps_cur])
+            missing_pct[country] = sum([
+                (country_weights[country]/100.0) * market_cap_pct[cap] 
+                for cap in missing_caps_cur
+            ])
         
         extra_caps_cur = []
         for element in all_caps:
-            if cap_coverage[country].count(element)>1:
+            if cap_coverage[country].count(element) > 1:
                 extra_caps_cur.append(element)
         if extra_caps_cur:
             overlapping_caps[country] = extra_caps_cur
-            overlapping_pct[country] = sum([(country_weights[country]/100.0)*MARKET_CAP_PCT[cap] for cap in extra_caps_cur])
-    results = {}
-    results['country_weights'] = country_weights
-    results['missing_caps'] = missing_caps
-    results['missing_pct'] = missing_pct
-    results['overlapping_caps'] = overlapping_caps
-    results['overlapping_pct'] = overlapping_pct
-
-    return results
+            overlapping_pct[country] = sum([
+                (country_weights[country]/100.0) * market_cap_pct[cap] 
+                for cap in extra_caps_cur
+            ])
+    
+    return {
+        'missing_caps': missing_caps,
+        'missing_pct': missing_pct,
+        'overlapping_caps': overlapping_caps,
+        'overlapping_pct': overlapping_pct
+    }
 
 def print_report(results, portfolio_df):
     missing_caps = results['missing_caps']
@@ -182,19 +251,19 @@ def main(file_path):
         raise Exception(f"Unknown sectors in portfolio: {invalid_sectors}. Make sure they appear in the regions.yaml file as a region or country.")
     
     # fetch country weights from IMID
-    df = fetch_country_weights(imid_url)
+    country_weights_df = fetch_country_weights(imid_url)
 
     # add missing countries with 0 weight
-    missing_countries = set(all_countries) - set(df['Country'])
+    missing_countries = set(all_countries) - set(country_weights_df['Country'])
     if missing_countries:
         print(f"Adding {len(missing_countries)} missing countries with 0% weight")
         for country in missing_countries:
-            df.loc[len(df)] = {'Country': country, 'Weight': 0.00}
+            country_weights_df.loc[len(country_weights_df)] = {'Country': country, 'Weight': 0.00}
 
     # build region weights by grouping countries
     region_weights = {}
     for region_name, countries in region_groupings.items():
-        region_weight = df[df['Country'].isin(countries)]['Weight'].sum()
+        region_weight = country_weights_df[country_weights_df['Country'].isin(countries)]['Weight'].sum()
         region_weights[region_name] = region_weight
     
     region_weights_series = pd.Series(region_weights).sort_values(ascending=False)
@@ -202,28 +271,28 @@ def main(file_path):
     print("Region Weights:")
     print(region_weights_series)    
     
+    # calculate portfolio weights
+    portfolio_df = calculate_portfolio_weights(
+        portfolio, all_countries, 
+        region_weights_series, country_weights_df, market_cap_pct
+    )
+    
+    print(f"\nPortfolio Weights:")
+    print(portfolio_df)
 
+    # analyze coverage
+    country_weights = country_weights_df.set_index('Country')['Weight'].to_dict()
+    results = analyze_world_coverage(
+        portfolio, country_weights, region_groupings, 
+        all_countries, market_cap_pct
+    )
+    
+    print("\n" + "="*50)
+    print_coverage_report(results, portfolio_df)
     ###
 
 
 
-
-    region_to_country = read_yaml("regions.yaml")
-    response = requests.get(IMID_url)
-    html_content = response.text
-    soup = BeautifulSoup(html_content, "html.parser")
-    json_input = soup.find("input", id="fund-geographical-breakdown")
-
-    json_data = json.loads(json_input["value"])
-    table_data = json_data.get("attrArray", [])
-    df = pd.DataFrame(columns=["Country", "Weight", "Market", "Region"])
-    df["Country"] = [item['name']['value'] for item in table_data]
-    df["Weight"] = [float(item['weight']['value'][:-1]) for item in table_data]
-
-    missing_countries = set(COUNTRIES) - set(df['Country'])
-    # "smallest" economy countries that are in MSCI Emerging IMI but missing from IMID currently:
-    for country in missing_countries:
-        df.loc[len(df)] = {'Country': country, 'Weight': 0.00}
     df["Market"] = df["Country"].map(COUNTRY_TO_MARKET)
     df["Region"] = df["Country"].map(COUNTRY_TO_REGION)
     df.loc[df["Region"].isnull(), "Region"] = df.loc[df["Region"].isnull(), "Country"]
