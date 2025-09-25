@@ -30,16 +30,6 @@ def load_regions(regions_file="regions.yaml"):
     return region_groupings, all_countries
 
 
-def load_config(config_file="config.yaml"):
-    """
-    Load configuration from YAML file.
-    
-    Returns:
-        dict: Configuration dictionary
-    """
-    return read_yaml(config_file)
-
-
 def validate_portfolio_sectors(portfolio, region_groupings, all_countries):
     """
     Validate that all portfolio sectors exist in the data.

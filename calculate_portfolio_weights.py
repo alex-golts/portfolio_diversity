@@ -43,7 +43,7 @@ import json
 import pandas as pd
 import argparse
 from utils import (
-    read_yaml, load_regions, load_config, 
+    read_yaml, load_regions, 
     validate_portfolio_sectors, get_countries_for_sector
 )
 
@@ -94,7 +94,6 @@ def fetch_country_weights(url, timeout=30):
     except Exception as e:
         raise Exception(f"Error processing country weights: {e}")
     
-
 def calculate_portfolio_weights(portfolio, all_countries, region_weights_series, country_weights_df, market_cap_pct):
     """
     Calculate weights for each sector in the portfolio.
@@ -213,21 +212,27 @@ def analyze_world_coverage(portfolio, country_weights, region_groupings, all_cou
         'overlapping_pct': overlapping_pct
     }
 
-def print_report(results, portfolio_df):
+def print_coverage_report(results, portfolio_df):
+    """Print coverage analysis report."""
     missing_caps = results['missing_caps']
     missing_pct = results['missing_pct']
     overlapping_caps = results['overlapping_caps']
     overlapping_pct = results['overlapping_pct']
+    
     if not missing_caps and not overlapping_caps:
-        print(f"Total market coverage={portfolio_df['Weight'].sum()}. No overlaps or missing segments.")
+        print(f"Total market coverage={portfolio_df['Weight'].sum():.2f}%. No overlaps or missing segments.")
+    
     if missing_caps:
         print(f"Missing segments: {missing_caps}")
         print(f"Missing coverage: {missing_pct}")
-        print(f"Total market coverage={portfolio_df['Weight'].sum()}, Total missed coverage: {sum(missing_pct.values())}")
+        print(f"Total market coverage={portfolio_df['Weight'].sum():.2f}%, "
+              f"Total missed coverage: {sum(missing_pct.values()):.2f}%")
+    
     if overlapping_caps:
         print(f"Overlapping segments: {overlapping_caps}")
         print(f"Overlapping coverage: {overlapping_pct}")
-        print(f"Total market coverage={portfolio_df['Weight'].sum()}, Total overlapping coverage: {sum(overlapping_pct.values())}")
+        print(f"Total market coverage={portfolio_df['Weight'].sum():.2f}%, "
+              f"Total overlapping coverage: {sum(overlapping_pct.values()):.2f}%")
 
 def main(file_path):
     """
@@ -238,7 +243,7 @@ def main(file_path):
     """
     # load configurations
     region_groupings, all_countries = load_regions()
-    config = load_config()
+    config = read_yaml("config.yaml")
     market_cap_pct = config['market_caps']
     imid_url = config['data_sources']['url']
 
@@ -256,7 +261,7 @@ def main(file_path):
     # add missing countries with 0 weight
     missing_countries = set(all_countries) - set(country_weights_df['Country'])
     if missing_countries:
-        print(f"Adding {len(missing_countries)} missing countries with 0% weight")
+        print(f"Adding {len(missing_countries)} missing countries with 0% weight: {missing_countries}")
         for country in missing_countries:
             country_weights_df.loc[len(country_weights_df)] = {'Country': country, 'Weight': 0.00}
 
@@ -289,46 +294,6 @@ def main(file_path):
     
     print("\n" + "="*50)
     print_coverage_report(results, portfolio_df)
-    ###
-
-
-
-    df["Market"] = df["Country"].map(COUNTRY_TO_MARKET)
-    df["Region"] = df["Country"].map(COUNTRY_TO_REGION)
-    df.loc[df["Region"].isnull(), "Region"] = df.loc[df["Region"].isnull(), "Country"]
-    
-    region_weights = df.groupby("Region")["Weight"].sum()
-    region_weights = region_weights.sort_values(ascending=False)
-
-    market_weights = df.groupby("Market")["Weight"].sum()
-    market_weights = market_weights.sort_values(ascending=False)
-
-    print("Region Weights:")
-    print(region_weights)
-
-    print("Market Weights:")
-    print(market_weights)
-
-    portfolio_df = pd.DataFrame(columns=["Sector", "Market Caps", "Weight"])
-    # calculate portfolio weights
-    sector_weights = []
-
-    for sector, caps in portfolio.items():
-        cap_pct =  sum([MARKET_CAP_PCT[cap] for cap in caps])
-        if sector in region_weights.index:
-            sector_weight = region_weights[sector]*(cap_pct/100.0)
-        elif sector in market_weights.index:
-            sector_weight = market_weights[sector]*(cap_pct/100.0)
-        sector_weights.append(sector_weight)
-    portfolio_df['Sector'] = list(portfolio.keys())
-    portfolio_df['Market Caps'] = list(portfolio.values())
-    portfolio_df['Weight'] = sector_weights
-
-    print(portfolio_df)
-
-    country_weights = df.set_index('Country')['Weight'].to_dict()
-    results = world_coverage(portfolio, country_weights)
-    print_report(results, portfolio_df)
 
 
 if __name__ == "__main__":
