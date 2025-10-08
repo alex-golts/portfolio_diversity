@@ -108,7 +108,7 @@ def calculate_portfolio_weights(portfolio, all_countries, region_weights_series,
     Returns:
         pd.DataFrame: Portfolio weights DataFrame
     """
-    portfolio_df = pd.DataFrame(columns=["Sector", "Market Caps", "Weight"])
+    portfolio_df = pd.DataFrame(columns=["Sector", "Market Caps", "Absolute Weight (%)", "Normalized Weight (%)"])
     sector_weights = []
     
     for sector, caps in portfolio.items():
@@ -131,8 +131,14 @@ def calculate_portfolio_weights(portfolio, all_countries, region_weights_series,
     
     portfolio_df['Sector'] = list(portfolio.keys())
     portfolio_df['Market Caps'] = list(portfolio.values())
-    portfolio_df['Weight'] = sector_weights
-    
+    total_weight = sum(sector_weights)
+    if total_weight > 0:
+        normalized_weights = [(w / total_weight) * 100 for w in sector_weights]
+    else:
+        normalized_weights = [0.0] * len(sector_weights)
+
+    portfolio_df['Absolute Weight (%)'] = sector_weights
+    portfolio_df['Normalized Weight (%)'] = normalized_weights    
     return portfolio_df
 
 def analyze_world_coverage(portfolio, country_weights, region_groupings, all_countries, market_cap_pct):
@@ -220,18 +226,18 @@ def print_coverage_report(results, portfolio_df):
     overlapping_pct = results['overlapping_pct']
     
     if not missing_caps and not overlapping_caps:
-        print(f"Total market coverage={portfolio_df['Weight'].sum():.2f}%. No overlaps or missing segments.")
+        print(f"Total market coverage={portfolio_df['Absolute Weight (%)'].sum():.2f}%. No overlaps or missing segments.")
     
     if missing_caps:
         print(f"Missing segments: {missing_caps}")
         print(f"Missing coverage: {missing_pct}")
-        print(f"Total market coverage={portfolio_df['Weight'].sum():.2f}%, "
+        print(f"Total market coverage={portfolio_df['Absolute Weight (%)'].sum():.2f}%, "
               f"Total missed coverage: {sum(missing_pct.values()):.2f}%")
     
     if overlapping_caps:
         print(f"Overlapping segments: {overlapping_caps}")
         print(f"Overlapping coverage: {overlapping_pct}")
-        print(f"Total market coverage={portfolio_df['Weight'].sum():.2f}%, "
+        print(f"Total market coverage={portfolio_df['Absolute Weight (%)'].sum():.2f}%, "
               f"Total overlapping coverage: {sum(overlapping_pct.values()):.2f}%")
 
 def main(file_path):
@@ -283,7 +289,7 @@ def main(file_path):
     )
     
     print(f"\nPortfolio Weights:")
-    print(portfolio_df)
+    print(portfolio_df.to_string(index=False))
 
     # analyze coverage
     country_weights = country_weights_df.set_index('Country')['Weight'].to_dict()
