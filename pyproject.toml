@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+target-version = "py39" 
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]  # E=pycodestyle errors, F=pyflakes, I=isort
+ignore = [
+    "E501",  # Line too long (let formatter handle it)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
